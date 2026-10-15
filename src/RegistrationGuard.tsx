@@ -18,7 +18,7 @@ export function RegistrationGuard({siteKey,onToken}:{siteKey:string;onToken:(tok
   const node=useRef<HTMLDivElement>(null),callback=useRef(onToken);callback.current=onToken;
   const [error,setError]=useState(''),[retry,setRetry]=useState(0);
   useEffect(()=>{let active=true,id:string|undefined,client:Turnstile|undefined;callback.current('');setError('');
-    void loadTurnstile().then(c=>{client=c;if(active&&node.current)id=c.render(node.current,{sitekey:siteKey,action:'register',theme:'light',size:'flexible',callback:(token:string)=>{if(active){setError('');callback.current(token);}},'expired-callback':()=>{if(active){callback.current('');setError('安全验证已过期，请重新验证');}},'error-callback':()=>{if(active){callback.current('');setError('安全验证未完成，请重试');}}});}).catch(e=>{if(active)setError(e.message);});
+    void loadTurnstile().then(c=>{client=c;if(active&&node.current)id=c.render(node.current,{sitekey:siteKey,action:'register',theme:'light',size:'flexible',callback:(token:string)=>{if(active){setError('');callback.current(token);}},'expired-callback':()=>{if(active){callback.current('');setError('安全验证已过期，请重新验证');}},'error-callback':(code:string)=>{if(active){console.warn('Registration verification error',String(code).slice(0,32));callback.current('');setError('安全验证未完成，请重试');}}});}).catch(e=>{if(active)setError(e.message);});
     return()=>{active=false;if(id)client?.remove(id);};
   },[siteKey,retry]);
   return <div className="registration-guard"><div ref={node} aria-label="注册安全验证"/>{error&&<p className="form-error" role="alert">{error} <button type="button" className="text-button" onClick={()=>setRetry(n=>n+1)}>重新验证</button></p>}<p className="form-hint">安全验证用于减少机器人批量注册。</p></div>;
