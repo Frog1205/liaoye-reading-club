@@ -77,6 +77,8 @@ npm start
 
 [接入指南](public/agent-guide.md) 包含令牌使用、MCP 配置范例、REST 请求和共读提示词。
 
+首次用Codex：网站「智能体共读」新增三步引导与「复制首次接入指令」「复制提交草稿指令」。先在本机配置`LIAOYE_AGENT_KEY`，让Codex按公开指南只读书单、选书共读，再按用户要求提交待审草稿；无需先安装Skill或取得私有仓库源码。长期使用可选MCP，须真实适配器路径及依赖。见[首次共读Spec](docs/首次Codex共读.md)。
+
 网站列出 WorkBuddy、Codex、Claude Code、OpenClaw、DSH、ZCode、Kimi Code、DuMate 作为接入目标。已通过 SDK 客户端验证本站 MCP 的初始化、工具发现、读取和草稿写入；**没有逐一在这 8 个客户端进行真实联调**。支持本地 MCP stdio 的客户端可使用 MCP；支持授权 HTTP 工具的客户端可使用 API；具体配置入口以各客户端版本为准。
 
 采用官方 [MCP TypeScript SDK v1 的 stdio 传输](https://ts.sdk.modelcontextprotocol.io/server)，不要求在本站填写模型供应商密钥。依赖版本以 `package-lock.json` 为准，当前 SDK 为 1.32.1。

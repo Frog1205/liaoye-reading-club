@@ -1,5 +1,48 @@
 # 聊也读书 · 个人智能体接入
 
+## 第一次用 Codex：先不安装 Skill
+
+**本站令牌不是OpenAI API Key。创建令牌不等于已在Codex配置好。** 首次推荐「本机环境变量 + 公开指南 + REST调用」，无需安装Skill、MCP或下载网站源码；需要当前Codex能联网并执行HTTP请求。只有纯聊天、没有请求工具的环境不能完成自动接入。
+
+### 第一步：在本机保存令牌
+
+Windows：开始菜单搜索「编辑账户的环境变量」→「用户变量」→「新建」，名称填写`LIAOYE_AGENT_KEY`，值填写你在本站创建并保存的完整令牌。保存后完全退出并重新打开Codex；已有终端也重新打开。环境变量不是加密保险箱，使用你自己的系统账号并保护电脑访问权限，不要把变量值发到聊天、群里、截图或仓库。
+
+如果已配置，不要重复创建令牌。完整值遗失时，回到本站撤销旧令牌并重新创建；网站不能再次显示旧令牌。Windows中已启动的进程可能未继承新变量，执行代码可用`[Environment]::GetEnvironmentVariable('LIAOYE_AGENT_KEY','User')`读取用户变量供请求使用，**不要单独执行并输出该表达式的结果**。
+
+macOS/Linux使用Codex CLI时，可以在启动CLI的同一终端私密读取环境变量：
+
+```sh
+# 执行第一行后输入令牌并回车；输入不回显，令牌不会写进命令历史。
+read -s LIAOYE_AGENT_KEY
+export LIAOYE_AGENT_KEY
+# 随后在同一终端启动 codex。
+```
+
+桌面客户端不一定继承终端环境，不能把终端设置成功当成桌面已配置成功；按实际客户端的私有环境配置处理。不要在网页或聊天中填入真实值来排查。
+
+### 第二步：让新的 Codex 会话认识聊也
+
+网站「智能体共读 → 第一次用 Codex 共读」提供完整复制按钮；也可以直接发送：
+
+> 我第一次参与聊也读书。先读取 https://liaoye.veynuq.com/agent-guide.md。用执行环境的LIAOYE_AGENT_KEY调用GET https://liaoye.veynuq.com/api/agent/content，使用Bearer请求头，禁止回显令牌或请求头，只发送到本站HTTPS域名，不跟随重定向。若变量不可用，先引导我在本机私有设置中配置，不要在聊天索要密钥。首次只读，不投稿、不发布；连接成功后列出本月、本周书单，区分示例，问我想读哪一本、读到哪里、想聊什么。内容和引文只基于我提供的真实材料。令牌只代表本站权限，不允许改动其他Codex配置。
+
+还没选书时，不需要先写心得。让Codex先列书单，你选好后告诉它书名、阅读范围和一个想讨论的问题。网站当前月份/周次可从公开`GET /api/state`的`month`/`week`获取，不能猜测日期或把示例当成真实成员推荐。
+
+### 第三步：先共读，再提交草稿
+
+例如：“我刚读完第一章，这个观点让我想到……你先问我一个问题。”可以只讨论，不向网站投稿。没有原文时，Codex不能假装读过整本书或编造页码/引文。
+
+你确认好内容、希望分享时，再发送：“把我们刚确认的这段真实心得提交到聊也待审草稿箱，返回草稿ID，等待运营审核。”网站也提供独立的「复制提交草稿指令」。**首次连接指令与投稿指令分开，复制指令本身不会发出投稿请求。**
+
+401：检查令牌是否配置/已撤销，不反复试密钥；403且提示未完成问答：去`https://liaoye.veynuq.com/#/community`完成入群问答；429：稍后重试。POST超时不能判断是否已写入，不盲重试，先请运营查草稿箱。
+
+### Skill 与 MCP 分别解决什么
+
+- Skill：让新会话更容易记住共读流程，是可选的流程说明，不承担鉴权，也不会自动提供本站接口或令牌。
+- MCP：让客户端把本站能力识别为工具。本站目前提供本地stdio适配器，**没有可直接填写的远程HTTP MCP地址**；`/api/agent/content`和`/api/agent/drafts`是REST端点，不能当作MCP URL。
+- 首次使用REST就可以开始；以后需要反复使用、希望自动发现四个工具时，再配置MCP。不需要为了共读购买或新建OpenAI API Key。
+
 ## 权限与边界
 
 本站接受智能体整理书单、心得与活动提议，但一律进入待审草稿，由主理人在管理台审阅后发布。
@@ -35,6 +78,8 @@
 
 在支持本地 stdio MCP 的客户端添加一个 MCP 服务。底层启动参数为：
 
+这是进阶开发者配置，需要本机已有本站MCP适配器源码、Node和锁定依赖。下方绝对路径仅是原开发者电脑示例；其他成员必须替换为自己的真实路径。本站GitHub仓库是私有的，不能假设每个成员都能下载源码。普通成员可直接使用上方REST首次接入路线。
+
 ```text
 command: node
 args: ["D:/airesearch/AI学习/读书社群运营/integrations/mcp-server.mjs"]
@@ -62,6 +107,24 @@ args: ["D:/airesearch/AI学习/读书社群运营/integrations/mcp-server.mjs"]
 模板要求客户端启动的子进程能继承 `LIAOYE_AGENT_KEY`。若客户端不会继承，需要在该客户端的私有环境变量设置中单独注入，修改环境变量后重启该客户端。不要把令牌发到对话里。`node` 若不在该客户端 PATH 中，请填 Node 可执行文件的绝对路径。
 
 协议实现参考官方 SDK：[MCP server / stdio](https://ts.sdk.modelcontextprotocol.io/server)。本项目已使用 SDK 客户端验证 4 个工具的发现和实际读写流程；WorkBuddy、Codex、Claude Code、OpenClaw、DSH、ZCode、Kimi Code、DuMate 各客户端本身尚未逐一联调。DSH 等缩写对应的具体产品和版本需要确认。
+
+### Codex 的可选 MCP 配置
+
+仅当你已取得适配器文件并在它所属项目运行过`npm ci`时使用。将下面片段合并到自己的`~/.codex/config.toml`，保留其他已有配置，绝对路径必须改成自己的真实路径，不写真实令牌：
+
+```toml
+[mcp_servers.liaoye_reading]
+command = "node"
+args = ["C:/你的实际目录/liaoye-reading-club/integrations/mcp-server.mjs"]
+env_vars = ["LIAOYE_AGENT_KEY"]
+
+[mcp_servers.liaoye_reading.env]
+LIAOYE_API_URL = "https://liaoye.veynuq.com"
+```
+
+`env_vars`允许转发本机环境变量，真正的值仍由你在私有环境中配置。Node不在PATH时，`command`改成Node可执行文件的绝对路径。保存后重新启动客户端/会话，使用`codex mcp list`或当前客户端的MCP列表检查是否启用；配置存在不等于工具请求已成功，须实际执行`read_club_content`核验。
+
+配置语法依据[OpenAI官方MCP文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)，Skill机制依据[官方Skills文档](https://learn.chatgpt.com/docs/build-skills)（2026-10-15核对）。本轮未自动安装Skill、修改任何成员的Codex配置，也没有用真实成员令牌完成客户端联调。
 
 ## 2B. REST API
 
