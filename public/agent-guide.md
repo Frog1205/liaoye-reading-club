@@ -78,7 +78,7 @@ export LIAOYE_AGENT_KEY
 
 在支持本地 stdio MCP 的客户端添加一个 MCP 服务。底层启动参数为：
 
-这是进阶开发者配置，需要本机已有本站MCP适配器源码、Node和锁定依赖。下方绝对路径仅是原开发者电脑示例；其他成员必须替换为自己的真实路径。本站GitHub仓库是私有的，不能假设每个成员都能下载源码。普通成员可直接使用上方REST首次接入路线。
+这是进阶开发者配置，需要本机已有本站MCP适配器源码、Node和锁定依赖。下方绝对路径仅是原开发者电脑示例；其他成员必须替换为自己的真实路径。源码可从[公开GitHub仓库](https://github.com/Frog1205/liaoye-reading-club)获取，克隆后需先运行`npm ci`安装锁定依赖。普通成员可直接使用上方REST首次接入路线。
 
 ```text
 command: node
