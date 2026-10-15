@@ -38,12 +38,12 @@ test('wechat is unique across browsers and normalized case while display nicknam
   assert.equal(app.store.db.prepare('SELECT COUNT(*) AS n FROM member_accounts').get().n,2);
   assert.equal((await register({...credentials,wechat:'fixture_reader_28'},first.cookie)).status,409);
 });
-test('account password and privilege injection are rejected and database stores only salted peppered hashes',async()=>{
+test('five-character passwords and privilege injection are rejected, six-character passwords register and login with hashes',async()=>{
   assert.equal((await register({...credentials,password:'short'})).status,400);
   assert.equal((await register({...credentials,role:'super_admin'})).status,400);
   assert.equal((await register({...credentials,joined:true})).status,400);
   assert.equal((await request('/api/account/register',{method:'POST',origin:'https://evil.invalid',data:credentials})).status,403);
-  const r=await register();assert.equal(r.status,201);const row=app.store.db.prepare('SELECT * FROM member_accounts').get();assert.notEqual(row.password_hash,credentials.password);assert.match(row.password_hash,/^[a-f0-9]{64}$/);assert.ok(row.password_salt.length>=32);
+  const sixCharacterPassword='six-ok';const r=await register({...credentials,password:sixCharacterPassword});assert.equal(r.status,201);assert.equal((await login({...credentials,password:sixCharacterPassword})).status,200);const row=app.store.db.prepare('SELECT * FROM member_accounts').get();assert.notEqual(row.password_hash,sixCharacterPassword);assert.match(row.password_hash,/^[a-f0-9]{64}$/);assert.ok(row.password_salt.length>=32);
   assert.doesNotMatch(JSON.stringify((await request('/api/state',{cookie:r.cookie})).body),/password_hash|password_salt|fixture_reader_26|pepper/);
 });
 test('registered users can read private contacts, then join once; unjoined users cannot submit or vote',async()=>{
