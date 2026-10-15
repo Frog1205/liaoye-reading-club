@@ -54,10 +54,11 @@ export function createMemberAccounts({get,run,batch,pepper}){
     async logout(cookie){await run('DELETE FROM member_sessions WHERE session_hash=?',await digest(cookie[memberCookie]||''));},
     async join(member,input){
       if(member.joined_at)throw fail(409,'你已完成入群登记，无需重复提交');
-      await batch([
-        ['UPDATE members SET answers=? WHERE id=?',[JSON.stringify(input),member.id]],
+      const results=await batch([
+        ['UPDATE members SET answers=? WHERE id=? AND EXISTS (SELECT 1 FROM member_accounts WHERE member_id=? AND joined_at IS NULL)',[JSON.stringify(input),member.id,member.id]],
         ['UPDATE member_accounts SET joined_at=? WHERE member_id=? AND joined_at IS NULL',[new Date().toISOString(),member.id]]
       ]);
+      if((results[0]?.meta?.changes??results[0]?.changes)!==1)throw fail(409,'你已完成入群登记，无需重复提交');
       return {id:member.id,nickname:member.nickname,joined:true};
     }
   };

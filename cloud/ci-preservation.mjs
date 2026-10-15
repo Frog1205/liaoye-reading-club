@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 
 export const target=Object.freeze({account:'3dadd336c63ba88092f6a6131544744d',project:'liaoye-reading',database:'9357071d-036a-4595-b4bd-90a148f850bb',domain:'https://liaoye.veynuq.com',repository:'Frog1205/liaoye-reading-club'});
-const requiredSecrets=['ADMIN_PASSWORD_HASH','ADMIN_PASSWORD_SALT','OPERATOR_PASSWORD_HASH','OPERATOR_PASSWORD_SALT','MEMBER_PASSWORD_PEPPER'];
+const requiredSecrets=['ADMIN_PASSWORD_HASH','ADMIN_PASSWORD_SALT','OPERATOR_PASSWORD_HASH','OPERATOR_PASSWORD_SALT','MEMBER_PASSWORD_PEPPER','TURNSTILE_SECRET_KEY'];
 const invariant=(condition,message)=>{if(!condition)throw new Error(message);};
 const ordered=value=>Array.isArray(value)?value.map(ordered):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,ordered(value[k])])):value;
 const hash=value=>createHash('sha256').update(JSON.stringify(ordered(value))).digest('hex');
@@ -22,6 +22,8 @@ export function snapshotProject(project){
   const db=production?.d1_databases;
   invariant(db?.DB?.id===target.database&&Object.keys(db).length===1,'Existing production D1 binding differs');
   invariant(requiredSecrets.every(k=>production.env_vars?.[k]?.type==='secret_text'),'Existing password secrets are missing or no longer encrypted');
+  invariant(Boolean(production.env_vars?.TURNSTILE_SITE_KEY?.value)&&! /^[123]x0000/.test(production.env_vars.TURNSTILE_SITE_KEY.value),'Production Turnstile sitekey missing or uses a test key');
+  invariant(production.env_vars?.ENVIRONMENT?.value!=='test','Production must not use the test environment');
   return {configurationFingerprint:hash({env:production.env_vars,d1:db,domains:[...project.domains].sort()}),secretNames:requiredSecrets,database:db.DB.id};
 }
 

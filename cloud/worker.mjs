@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { submissionSchema, joinSchema,registerSchema,memberLoginSchema,contactsSchema } from '../server/validation.mjs';
 import {createMemberAccounts,memberCookie,memberSessionSeconds,publicMember} from '../server/member-accounts.mjs';
 import { localDate, weekStart } from '../server/dates.mjs';
+import {registrationSecurity,verifyRegistration,registrationBodyLimit} from '../server/registration-security.mjs';
 const now=()=>new Date().toISOString();
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 const hex=bytes=>Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
@@ -11,7 +12,7 @@ export async function passwordHash(password,salt){const key=await crypto.subtle.
 function constantEqual(a,b){if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;}
 const parse=r=>r&&({id:r.id,kind:r.kind,status:r.status,data:JSON.parse(r.data),source:r.source,sourceLabel:r.source_label,demo:Boolean(r.demo),createdAt:r.created_at,updatedAt:r.updated_at});
 export async function handle(request,env){
-  const headers=new Headers({'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"});
+  const headers=new Headers({'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'same-origin','Content-Security-Policy':"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"});
   const json=(data,status=200)=>{headers.set('Content-Type','application/json; charset=utf-8');return new Response(JSON.stringify(data),{status,headers});};
   const url=new URL(request.url),path=url.pathname,method=request.method,db=env.DB;
   const q=(sql,...args)=>{const statement=db.prepare(sql);return args.length?statement.bind(...args):statement;};
@@ -35,9 +36,10 @@ export async function handle(request,env){
   const requireSuper=async()=>{await requireAdmin();if(await adminRole()!=='super_admin')throw fail(403,'此操作仅限超级管理员');};
   const requireAccount=async()=>{const m=await member();if(!m)throw fail(401,'请先登录或注册账号');return m;};
   const requireMember=async()=>{const m=await requireAccount();if(!m.joined_at)throw fail(403,'请先在加入社群页面完成入群问答');return m;};
-  const limit=async(bucket,max,window)=>{const current=Math.floor(Date.now()/window);const key=await hash(`${bucket}:${current}`);const r=await get('INSERT INTO rate_limits(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1 RETURNING count',key,Date.now()+window*2);if(r.count>max)throw fail(429,'操作太频繁，请稍后再试');};
+  const limit=async(bucket,max,window)=>{const current=Math.floor(Date.now()/window);const key=await hash(`${bucket}:${current}`);const r=await get('INSERT INTO rate_limits(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1 WHERE count<=? RETURNING count',key,Date.now()+window*2,max);if(!r||r.count>max)throw fail(429,'操作太频繁，请稍后再试');if(r.count===1)await run('DELETE FROM rate_limits WHERE key IN (SELECT key FROM rate_limits WHERE expires_at<? LIMIT 100)',Date.now());};
   const agent=async()=>{const token=/^Bearer (.+)$/i.exec(request.headers.get('Authorization')||'')?.[1];if(!token)throw fail(401,'需要个人智能体令牌');const a=await get('SELECT * FROM agent_keys WHERE key_hash=? AND revoked_at IS NULL',await hash(token));if(!a)throw fail(401,'令牌无效或已撤销');await limit('agent:'+a.id,60,60000);await run('UPDATE agent_keys SET last_used_at=? WHERE id=?',now(),a.id);return a;};
-  const body=async()=>{if(!(request.headers.get('Content-Type')||'').startsWith('application/json'))throw fail(415,'请使用 application/json');if(Number(request.headers.get('Content-Length'))>65536)throw fail(413,'内容过长');const reader=request.body?.getReader();let bytes=0,chunks=[];if(reader){while(true){const {value,done}=await reader.read();if(done)break;bytes+=value.length;if(bytes>65536){await reader.cancel();throw fail(413,'内容过长');}chunks.push(value);}}const joined=new Uint8Array(bytes);let offset=0;for(const c of chunks){joined.set(c,offset);offset+=c.length;}try{return JSON.parse(new TextDecoder().decode(joined)||'{}');}catch{throw fail(400,'JSON 格式不正确');}};
+  const body=async(max=65536)=>{if(!(request.headers.get('Content-Type')||'').startsWith('application/json'))throw fail(415,'请使用 application/json');if(Number(request.headers.get('Content-Length'))>max)throw fail(413,'内容过长');const reader=request.body?.getReader();let bytes=0,chunks=[];if(reader){while(true){const {value,done}=await reader.read();if(done)break;bytes+=value.length;if(bytes>max){await reader.cancel();throw fail(413,'内容过长');}chunks.push(value);}}const joined=new Uint8Array(bytes);let offset=0;for(const c of chunks){joined.set(c,offset);offset+=c.length;}try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(joined)||'{}');}catch{throw fail(400,'JSON 格式不正确');}};
+  const security=async()=>registrationSecurity({required:env.ENVIRONMENT!=='test'||env.TURNSTILE_REQUIRED===true,siteKey:env.TURNSTILE_SITE_KEY,secret:env.TURNSTILE_SECRET_KEY,enabled:await setting('registrationEnabled')!==false});
   try{
     const allowed=(env.ALLOWED_HOSTS||'liaoye.veynuq.com,liaoye-reading.pages.dev').split(',');
     const local=env.ENVIRONMENT==='test'&&['localhost','127.0.0.1'].includes(url.hostname);
@@ -53,12 +55,17 @@ export async function handle(request,env){
       const date=localDate(env.LIAOYE_TIMEZONE||'America/Los_Angeles');
       return json({content:rows.map(c=>{if(c.kind!=='activity')return c;const votes=counts.find(v=>v.content_id===c.id)?.n||0;return{...c,votes,voted:mine.some(v=>v.content_id===c.id),canPlan:!c.demo&&votes>=3&&(firstMeetingHeld||groupSize>=100)};}),member:publicMember(m),admin:await admin(),adminRole:await adminRole(),date,month:date.slice(0,7),week:weekStart(date),community:{groupSize,firstMeetingHeld,members:(await get('SELECT COUNT(*) AS n FROM member_accounts')).n,firstMeetingThreshold:100,proposalThreshold:3},periods:Object.fromEntries(['monthly','weekly'].map(c=>[c,[...new Set(rows.filter(r=>r.kind==='book'&&r.data.cadence===c).map(r=>r.data.period))].sort().reverse()]))});
     }
+    if(path==='/api/account/security'&&method==='GET')return json(await security());
     if(path==='/api/account/register'&&method==='POST'){
+      const config=await security();if(!config.enabled)throw fail(403,'新账号注册暂时关闭，请稍后再来；已有账号可正常登录');
+      await limit('register-burst:'+(request.headers.get('CF-Connecting-IP')||'local'),5,60000);
       await limit('register:'+(request.headers.get('CF-Connecting-IP')||'local'),10,3600000);
-      const result=await accounts.register(registerSchema.parse(await body()),cookie);setCookie(memberCookie,result.sid,memberSessionSeconds);return json(result.member,201);
+      const input=registerSchema.parse(await body(registrationBodyLimit));
+      await verifyRegistration({...config,secret:env.TURNSTILE_SECRET_KEY,token:input.turnstileToken,hostname:url.hostname,remoteip:request.headers.get('CF-Connecting-IP')||undefined,fetcher:env.ENVIRONMENT==='test'?env.TEST_TURNSTILE_FETCH:undefined});
+      const result=await accounts.register(input,cookie);setCookie(memberCookie,result.sid,memberSessionSeconds);return json(result.member,201);
     }
     if(path==='/api/account/login'&&method==='POST'){
-      const input=memberLoginSchema.parse(await body());await limit('member-login-ip:'+(request.headers.get('CF-Connecting-IP')||'local'),30,900000);await limit('member-login:'+input.wechat,10,900000);
+      await limit('member-login-ip:'+(request.headers.get('CF-Connecting-IP')||'local'),30,900000);const input=memberLoginSchema.parse(await body(registrationBodyLimit));await limit('member-login:'+input.wechat,10,900000);
       const result=await accounts.login(input,cookie);setCookie(memberCookie,result.sid,memberSessionSeconds);return json(result.member);
     }
     if(path==='/api/account/logout'&&method==='POST'){await accounts.logout(cookie);setCookie(memberCookie,'',0);return json({ok:true});}
@@ -89,6 +96,8 @@ export async function handle(request,env){
     if(path==='/api/admin/logout'&&method==='POST'){await run('DELETE FROM management_sessions WHERE session_hash=?',await hash(cookie.liaoye_admin||''));setCookie('liaoye_admin','',0);return json({ok:true});}
     if(path.startsWith('/api/admin/')){
       await requireAdmin();
+      if(path==='/api/admin/registration'&&method==='GET')return json({enabled:await setting('registrationEnabled')!==false});
+      if(path==='/api/admin/registration'&&method==='PUT'){const input=z.object({enabled:z.boolean()}).strict().parse(await body());await setting('registrationEnabled',input.enabled);await audit('update_registration',input.enabled?'enabled':'disabled');return json(input);}
       if(path==='/api/admin/community-contacts'&&method==='GET')return json({contacts:await setting('communityContacts')||[]});
       if(path==='/api/admin/community-contacts'&&method==='PUT'){const input=contactsSchema.parse(await body());await setting('communityContacts',input.contacts);await audit('update_community_contacts','community');return json({ok:true});}
       if(path.startsWith('/api/admin/keys'))await requireSuper();

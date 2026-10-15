@@ -11,7 +11,7 @@ if(!['--staged','--history'].includes(mode))throw new Error('Use --staged or --h
 
 // The real local values remain local. They are used only as in-memory scan inputs.
 const knownSecrets=[];
-for(const name of ['data/local-access.json','data/operator-access.json','data/member-pepper.json']){
+for(const name of ['data/local-access.json','data/operator-access.json','data/member-pepper.json','data/turnstile.json']){
   const path=resolve(root,name);
   if(!existsSync(path))continue;
   let values;try{values=JSON.parse(readFileSync(path,'utf8'));}catch{throw new Error('Cannot read local credential input; safety check stopped.');}

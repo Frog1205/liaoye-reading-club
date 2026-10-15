@@ -7,12 +7,13 @@ import { z } from 'zod';
 import { createStore, localDate, weekStart } from './store.mjs';
 import { submissionSchema, joinSchema,registerSchema,memberLoginSchema,contactsSchema } from './validation.mjs';
 import {createMemberAccounts,memberCookie,memberSessionSeconds,memberSessionQuery,publicMember} from './member-accounts.mjs';
+import {registrationSecurity,verifyRegistration,registrationBodyLimit} from './registration-security.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = (status, message) => Object.assign(new Error(message), { status });
 function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').filter(x => x.includes('=')).map(x => { const i=x.indexOf('='); return [x.slice(0,i).trim(), x.slice(i+1)]; })); }
 
-export function createApp({ dataDir, publicDir, adminPassword, operatorPassword, memberPepper,seed = true, timezone = 'America/Los_Angeles' }) {
+export function createApp({ dataDir, publicDir, adminPassword, operatorPassword, memberPepper,turnstile={},seed = true, timezone = 'America/Los_Angeles' }) {
   const store = createStore(dataDir, { seed, timezone });
   const sessions = new Map(), attempts = new Map();
   const secretPath = join(dataDir, 'local-access.json');
@@ -45,7 +46,7 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
     const now = Date.now();
     for (const [k,v] of attempts) if (v.expires < now) attempts.delete(k);
     const entry = attempts.get(bucket) || { count: 0, expires: now + windowMs };
-    entry.count++; attempts.set(bucket,entry);
+    entry.count=Math.min(entry.count+1,max+1); attempts.set(bucket,entry);
     if (entry.count > max) throw fail(429, '操作太频繁，请稍后再试');
   };
   const authAgent = req => {
@@ -57,11 +58,12 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
     store.db.prepare('UPDATE agent_keys SET last_used_at=? WHERE id=?').run(new Date().toISOString(), row.id);
     return row;
   };
-  async function body(req) {
+  const security=()=>registrationSecurity({...turnstile,enabled:store.setting('registrationEnabled')!==false});
+  async function body(req,max=64*1024) {
     if (!(req.headers['content-type'] || '').startsWith('application/json')) throw fail(415, '请使用 application/json');
-    let raw = '', bytes = 0;
-    for await (const chunk of req) { bytes += chunk.length; if (bytes > 64 * 1024) throw fail(413, '内容过长'); raw += chunk; }
-    try { return JSON.parse(raw || '{}'); } catch { throw fail(400, 'JSON 格式不正确'); }
+    let bytes = 0;const chunks=[];
+    for await (const chunk of req) { bytes += chunk.length; if (bytes > max) throw fail(413, '内容过长'); chunks.push(chunk); }
+    try { return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)) || '{}'); } catch { throw fail(400, 'JSON 格式不正确'); }
   }
   const json = (res, data, status = 200) => { res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store' }); res.end(JSON.stringify(data)); };
   const setCookie = (res, name, value, maxAge) => res.setHeader('Set-Cookie', `${name}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}`);
@@ -83,7 +85,7 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('X-Frame-Options','DENY');
     res.setHeader('Referrer-Policy','same-origin');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
     try {
       const host = req.headers.host || '';
       if (!/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(host)) throw fail(403,'此版本仅开放本机访问');
@@ -95,12 +97,15 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
       }
       if (path === '/api/health' && method === 'GET') return json(res,{ ok:true, service:'liaoye', version:'0.1.0' });
       if (path === '/api/state' && method === 'GET') return json(res,snapshot(req));
+      if(path==='/api/account/security'&&method==='GET')return json(res,security());
       if(path==='/api/account/register'&&method==='POST'){
-        rateLimit(`register:${req.socket.remoteAddress}`,10,60*60_000);const result=await accounts.register(registerSchema.parse(await body(req)),cookies(req));
+        const config=security();if(!config.enabled)throw fail(403,'新账号注册暂时关闭，请稍后再来；已有账号可正常登录');
+        rateLimit(`register-burst:${req.socket.remoteAddress}`,5,60_000);rateLimit(`register:${req.socket.remoteAddress}`,10,60*60_000);
+        const input=registerSchema.parse(await body(req,registrationBodyLimit));await verifyRegistration({...config,secret:turnstile.secret,token:input.turnstileToken,hostname:url.hostname,remoteip:req.socket.remoteAddress,fetcher:turnstile.fetcher});const result=await accounts.register(input,cookies(req));
         setCookie(res,memberCookie,result.sid,memberSessionSeconds);return json(res,result.member,201);
       }
       if(path==='/api/account/login'&&method==='POST'){
-        const input=memberLoginSchema.parse(await body(req));rateLimit(`member-login-ip:${req.socket.remoteAddress}`,30,15*60_000);rateLimit(`member-login:${input.wechat}`,10,15*60_000);
+        rateLimit(`member-login-ip:${req.socket.remoteAddress}`,30,15*60_000);const input=memberLoginSchema.parse(await body(req,registrationBodyLimit));rateLimit(`member-login:${input.wechat}`,10,15*60_000);
         const result=await accounts.login(input,cookies(req));setCookie(res,memberCookie,result.sid,memberSessionSeconds);return json(res,result.member);
       }
       if(path==='/api/account/logout'&&method==='POST'){await accounts.logout(cookies(req));setCookie(res,memberCookie,'',0);return json(res,{ok:true});}
@@ -144,6 +149,8 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
       }
       if (path.startsWith('/api/admin/')) {
         requireAdmin(req);
+        if(path==='/api/admin/registration'&&method==='GET')return json(res,{enabled:store.setting('registrationEnabled')!==false});
+        if(path==='/api/admin/registration'&&method==='PUT'){const input=z.object({enabled:z.boolean()}).strict().parse(await body(req));store.setting('registrationEnabled',input.enabled);store.audit('update_registration',input.enabled?'enabled':'disabled');return json(res,input);}
         if(path==='/api/admin/community-contacts'&&method==='GET')return json(res,{contacts:store.setting('communityContacts')||[]});
         if(path==='/api/admin/community-contacts'&&method==='PUT'){const input=contactsSchema.parse(await body(req));store.setting('communityContacts',input.contacts);store.audit('update_community_contacts','community');return json(res,{ok:true});}
         if(path.startsWith('/api/admin/keys'))requireSuper(req);

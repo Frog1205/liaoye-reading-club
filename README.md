@@ -7,6 +7,7 @@
 - [PRD](docs/PRD.md)：产品目标、角色权限、业务规则、体验路径和验收。
 - [技术架构](docs/技术架构.md)：Pages + D1、数据模型、REST/MCP 契约、部署恢复和演进取舍。
 - [会员账号与社群加入](docs/会员账号与社群加入.md)：微信号＋密码、跨设备登录、私有联系人与兼容迁移。
+- [注册安全加固](docs/注册安全加固.md)：生产真人验证、突发限流、异常输入及注册紧急开关，含已知边界。
 - [AI-native 开发拆解](docs/AI-native开发拆解.md)：L2-A2 建议坐标、模块责任、依赖、五步循环、任务与成本。
 - [硬节点](docs/ai-native/13-HARD-NODE-REGISTER.md)、[待决事项](docs/ai-native/16-DECISION-REGISTRY.md)、[验证与验收](docs/ai-native/验证与验收.md)。
 
