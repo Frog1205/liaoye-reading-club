@@ -13,6 +13,8 @@ export function validateConfig(config){
   invariant(config.pages_build_output_dir==='dist','Unexpected build output directory');
   invariant(config.d1_databases?.length===1&&config.d1_databases[0].binding==='DB'&&config.d1_databases[0].database_id===target.database,'Existing D1 binding must not be changed');
   invariant(requiredSecrets.every(k=>!(k in (config.vars||{}))),'Authentication secrets must stay in Cloudflare, outside source configuration');
+  invariant(typeof config.vars?.TURNSTILE_SITE_KEY==='string'&&config.vars.TURNSTILE_SITE_KEY.length>0&&!/^[123]x0000/.test(config.vars.TURNSTILE_SITE_KEY),'Public Turnstile sitekey must be present in Wrangler runtime vars');
+  invariant(config.vars?.ENVIRONMENT!=='test','Production runtime must not use test mode');
 }
 
 export function snapshotProject(project){
@@ -54,6 +56,7 @@ async function run(mode){
   }
   const config=JSON.parse(await readFile('wrangler.jsonc','utf8'));validateConfig(config);
   const project=await getProject(),snapshot=snapshotProject(project);
+  invariant(project.deployment_configs.production.env_vars.TURNSTILE_SITE_KEY.value===config.vars.TURNSTILE_SITE_KEY,'Wrangler public sitekey differs from the configured production widget');
   if(mode==='before'){
     await mkdir('artifacts',{recursive:true});
     await writeFile('artifacts/ci-preservation-before.json',JSON.stringify(snapshot));
@@ -70,6 +73,7 @@ async function run(mode){
   invariant(live,'Custom domain has not served this deployment revision yet');
   const health=await publicJson('/api/health');invariant(health.ok&&health.storage==='D1','Live D1-backed health check failed');
   const state=await publicJson('/api/state');invariant(Array.isArray(state.content)&&state.admin===false&&state.adminRole===null,'Public state verification failed');
+  const registration=await publicJson('/api/account/security');invariant(registration.required===true&&registration.available===true&&registration.siteKey===config.vars.TURNSTILE_SITE_KEY,'Live registration challenge configuration is unavailable or differs');
   const result={commit:process.env.GITHUB_SHA,domain:target.domain,configurationPreserved:true,databaseBindingPreserved:true,passwordSecretConfigurationPreserved:true,publicContent:state.content.length,verifiedAt:new Date().toISOString()};
   await writeFile('artifacts/ci-preservation-after.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
   if(process.env.GITHUB_STEP_SUMMARY)await appendFile(process.env.GITHUB_STEP_SUMMARY,`### Production deployment verified\n\n- Site: ${target.domain}\n- Commit: \`${process.env.GITHUB_SHA}\`\n- Existing D1 binding and password secret configuration preserved.\n- No schema, seed, password update or database write commands in the workflow.\n`);

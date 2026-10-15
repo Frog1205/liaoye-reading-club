@@ -1,8 +1,18 @@
 {
-  "$schema":"node_modules/wrangler/config-schema.json",
-  "name":"liaoye-reading",
-  "compatibility_date":"2025-09-01",
-  "pages_build_output_dir":"dist",
-  "d1_databases":[{"binding":"DB","database_name":"liaoye-reading-db","database_id":"9357071d-036a-4595-b4bd-90a148f850bb"}],
-  "vars":{"ALLOWED_HOSTS":"liaoye.veynuq.com,liaoye-reading.pages.dev","LIAOYE_TIMEZONE":"America/Los_Angeles"}
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "liaoye-reading",
+  "compatibility_date": "2025-09-01",
+  "pages_build_output_dir": "dist",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "liaoye-reading-db",
+      "database_id": "9357071d-036a-4595-b4bd-90a148f850bb"
+    }
+  ],
+  "vars": {
+    "ALLOWED_HOSTS": "liaoye.veynuq.com,liaoye-reading.pages.dev",
+    "LIAOYE_TIMEZONE": "America/Los_Angeles",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFXbG3UDkD2udsm9"
+  }
 }
