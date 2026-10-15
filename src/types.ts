@@ -17,7 +17,7 @@ export type State = {
   community: { groupSize: number | null; firstMeetingHeld: boolean; members: number; firstMeetingThreshold: number; proposalThreshold: number };
   periods: { monthly: string[]; weekly: string[] };
 };
-export type AgentKey = { id: string; name: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null };
+export type AgentKey = { id: string; name: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null; owner_nickname?:string|null };
 export type AdminState = { role: 'super_admin' | 'operator'; pending: Entry[]; rejected: Entry[]; keys: AgentKey[]; groupSize: number | null; firstMeetingHeld: boolean };
 export type EditorState = { kind: Kind; entry?: Entry; bookTitle?: string };
 export const kindNames: Record<Kind,string> = { book: '书单', note: '心得', activity: '活动提议' };

@@ -12,3 +12,5 @@ CREATE TABLE IF NOT EXISTS member_accounts (member_id TEXT PRIMARY KEY REFERENCE
 CREATE TABLE IF NOT EXISTS member_sessions (session_hash TEXT PRIMARY KEY,member_id TEXT NOT NULL REFERENCES member_accounts(member_id),expires_at INTEGER NOT NULL,created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS member_sessions_member ON member_sessions(member_id);
 CREATE INDEX IF NOT EXISTS member_sessions_expiry ON member_sessions(expires_at);
+CREATE TABLE IF NOT EXISTS member_agent_keys (id TEXT PRIMARY KEY,owner_member_id TEXT NOT NULL REFERENCES member_accounts(member_id),name TEXT NOT NULL,key_hash TEXT UNIQUE NOT NULL,prefix TEXT NOT NULL,created_at TEXT NOT NULL,last_used_at TEXT,revoked_at TEXT);
+CREATE INDEX IF NOT EXISTS member_agent_keys_owner ON member_agent_keys(owner_member_id,revoked_at);

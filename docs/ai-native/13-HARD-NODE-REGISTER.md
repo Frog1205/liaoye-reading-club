@@ -9,7 +9,7 @@
 | ID／Owner 模块 | 受保护动作／前置身份 | 结构及确定性 Guard | 默认失败、影响上限 | 审计与恢复／已知缺口 |
 | --- | --- | --- | --- | --- |
 | HN-01／MOD-01、04 | Agent 写草稿，不获得发布能力；须有效 Agent 令牌 | submissionSchema strict；专用 drafts 入口固定 pending；公开查询只选 published；管理入口需管理会话 | 无效令牌 401，额外 status 字段 400；60/min/令牌；单次一条内容 | agent_draft 审计；人工退回／收回。无幂等键，网络失败可重复；写入和审计非原子 |
-| HN-02／MOD-03 | 令牌查看／创建／撤销只允许超级管理员 | requireSuper、服务端 role；operator dashboard 的 keys=[]；登录 strict 拒绝客户端 role | 未登录 401，运营角色 403，角色注入 400；一次创建／撤销一把令牌 | create_agent_key／revoke_agent_key；泄露时人工撤销；缺个人 actor、令牌过期和全局发行配额 |
+| HN-02／MOD-03 | 全局令牌管理须超级管理员；成员仅可管理本人令牌（BASE-08授权） | 全局requireSuper；个人requireAccount及owner SQL；单条条件INSERT最多5枚；operator dashboard keys=[]；登录/创建strict拒绝角色及owner注入 | 个人未登录401，他人撤销404，全局运营403；创建10/h/账号；完整值仅一次 | create/revoke_member_agent_key含账号及令牌ID；超级管理员可应急撤销，旧令牌兼容；无过期与全局发行配额；见PAT-01～06 |
 | HN-03／MOD-01 | 公开内容状态、类型与周期正确；须管理会话或合法投稿身份 | 同类型编辑；周一日期／月格式校验；reject 仅 pending；管理保存固定 published | 类型／日期 400，退回非法状态 409；请求 64 KiB | publish/reject/unpublish 部分审计；可收回，不能恢复历史正文。无编辑锁；unpublish API 允许任一已有状态回 pending |
 | HN-04／MOD-02 | 活动支持由成员发起；不得伪造示例票或自动成行 | 成员会话、published activity 且非 demo；联合主键防重复；canPlan 确定性公式 | 未登记 401，无活动 404，示例 400；一身份一活动至多一票 | 重复支持幂等、可取消。无投票动作完整审计、强人类唯一性和专用限流；筹备提示不是线下执行 |
 | HN-05／MOD-02、03 | 私有问答和凭证不从公开／Agent 输出泄露 | 输出显式选择字段；Agent 仅 list published；Cookie HttpOnly；存摘要不返摘要 | 无私有查询入口；后台未实现问答列表；响应无秘密 | 备份与本地凭证文件仍敏感，依赖账户／文件访问控制；保留／删除政策未定，不能把忽略文件当加密 |

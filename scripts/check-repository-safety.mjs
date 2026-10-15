@@ -39,7 +39,7 @@ const forbiddenPath=path=>/(^|\/)(data|artifacts|node_modules|dist|\.wrangler|ba
 const patterns=[
   ['private-key',/-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/],
   ['github-token',/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b/],
-  ['agent-token',/\bly_[A-Za-z0-9_-]{40,}\b/],
+  ['agent-token',/\bly(?:m)?_[A-Za-z0-9_-]{40,}\b/],
   ['model-api-key',/\bsk-(?:proj-|ant-[A-Za-z0-9]+-)?[A-Za-z0-9_-]{24,}\b/],
   ['aws-access-key',/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/],
   ['slack-token',/\bxox[baprs]-[A-Za-z0-9-]{20,}\b/],
