@@ -15,6 +15,8 @@ GitHub 只同步源码与文档，密码、令牌、数据库、成员问答、�
 
 私有源码仓库：[Frog1205/liaoye-reading-club](https://github.com/Frog1205/liaoye-reading-club)。
 
+自动部署配置：[GitHub Actions → 原 Cloudflare Pages](docs/自动部署.md)。推送 `main` 后测试、构建并发布到现有域名；沿用 D1 与密码 Secret，不执行数据初始化或密码更新。首次上线结果以 Actions 实际运行记录为准。
+
 从一页书，到一场相见。一个用于维护每月／每周共读书单、分享心得、发起线下共读的小网站。
 
 线上入口：<https://liaoye.veynuq.com>。云端使用 Cloudflare Pages + D1，操作、更新与备份见 [线上部署说明](docs/线上部署.md)。下文“本地版边界”专指原本机运行模式；线上权限与运行方式以部署说明为准。

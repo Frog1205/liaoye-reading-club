@@ -2,7 +2,7 @@
 
 版本：1.0 · 日期：2026-10-15。
 
-仓库：[Frog1205/liaoye-reading-club](https://github.com/Frog1205/liaoye-reading-club)，私有可见性，分支 `main`。本次仅同步源码，不连接 GitHub 到 Cloudflare 的自动部署。
+仓库：[Frog1205/liaoye-reading-club](https://github.com/Frog1205/liaoye-reading-club)，私有可见性，分支 `main`。已按用户后续要求增加 [GitHub Actions 自动部署配置](自动部署.md)，部署Secret单独保存在Actions；原密码、运行数据库和备份仍不进入Git文件。
 
 仓库仅保存应用源码、数据库结构／迁移、依赖锁文件、测试和文档。默认私有仓库。线上 Cloudflare 数据和本地 SQLite 独立于 Git，不随代码提交同步。
 
