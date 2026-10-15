@@ -17,7 +17,11 @@ export const submissionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('note'), data: noteSchema }).strict(),
   z.object({ kind: z.literal('activity'), data: activitySchema }).strict()
 ]);
+export const wechatSchema=z.string().trim().regex(/^[A-Za-z][A-Za-z0-9_-]{5,63}$/,'微信号需为6–64位字母、数字、下划线或连字符，且以字母开头').transform(v=>v.toLowerCase());
+export const registerSchema=z.object({nickname:short(24),wechat:wechatSchema,password:z.string().min(12,'密码至少12位').max(128,'密码最多128位')}).strict();
+export const memberLoginSchema=z.object({wechat:wechatSchema,password:z.string().min(1).max(128)}).strict();
+export const contactsSchema=z.object({contacts:z.array(z.object({name:short(30),role:z.enum(['owner','operator']),wechat:wechatSchema}).strict()).min(1).max(10)}).strict().superRefine((v,ctx)=>{if(new Set(v.contacts.map(c=>c.wechat)).size!==v.contacts.length)ctx.addIssue({code:'custom',path:['contacts'],message:'联系方式中的微信号不能重复'});});
 export const joinSchema = z.object({
-  nickname: short(24), recommendedBook: short(100), value: short(300),
+  recommendedBook: short(100), value: short(300),
   aiExperience: z.enum(['经常使用', '偶尔试过', '还没用过']), agreed: z.literal(true)
 }).strict();

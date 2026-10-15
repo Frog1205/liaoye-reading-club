@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 
 export const target=Object.freeze({account:'3dadd336c63ba88092f6a6131544744d',project:'liaoye-reading',database:'9357071d-036a-4595-b4bd-90a148f850bb',domain:'https://liaoye.veynuq.com',repository:'Frog1205/liaoye-reading-club'});
-const requiredSecrets=['ADMIN_PASSWORD_HASH','ADMIN_PASSWORD_SALT','OPERATOR_PASSWORD_HASH','OPERATOR_PASSWORD_SALT'];
+const requiredSecrets=['ADMIN_PASSWORD_HASH','ADMIN_PASSWORD_SALT','OPERATOR_PASSWORD_HASH','OPERATOR_PASSWORD_SALT','MEMBER_PASSWORD_PEPPER'];
 const invariant=(condition,message)=>{if(!condition)throw new Error(message);};
 const ordered=value=>Array.isArray(value)?value.map(ordered):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,ordered(value[k])])):value;
 const hash=value=>createHash('sha256').update(JSON.stringify(ordered(value))).digest('hex');
@@ -55,7 +55,7 @@ async function run(mode){
   if(mode==='before'){
     await mkdir('artifacts',{recursive:true});
     await writeFile('artifacts/ci-preservation-before.json',JSON.stringify(snapshot));
-    console.log('Existing project, D1 binding, custom domain and four password secrets verified. No configuration or database changes requested.');
+    console.log('Existing project, D1 binding, custom domain and required authentication secrets verified. No configuration or database changes requested.');
     return;
   }
   invariant(mode==='after','Expected stamp, before or after mode');

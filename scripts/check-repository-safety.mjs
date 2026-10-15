@@ -11,12 +11,13 @@ if(!['--staged','--history'].includes(mode))throw new Error('Use --staged or --h
 
 // The real local values remain local. They are used only as in-memory scan inputs.
 const knownSecrets=[];
-for(const name of ['data/local-access.json','data/operator-access.json']){
+for(const name of ['data/local-access.json','data/operator-access.json','data/member-pepper.json']){
   const path=resolve(root,name);
   if(!existsSync(path))continue;
   let values;try{values=JSON.parse(readFileSync(path,'utf8'));}catch{throw new Error('Cannot read local credential input; safety check stopped.');}
-  for(const [key,value]of Object.entries(values))if(/password|token|secret/i.test(key)&&typeof value==='string'&&value.length>=8)knownSecrets.push(value);
+  for(const [key,value]of Object.entries(values))if(/password|token|secret|pepper/i.test(key)&&typeof value==='string'&&value.length>=8)knownSecrets.push(value);
 }
+if(existsSync('data/community-contacts.json')){const v=JSON.parse(readFileSync('data/community-contacts.json','utf8'));for(const c of v.contacts||[])if(typeof c.wechat==='string'&&c.wechat.length>=6)knownSecrets.push(c.wechat);}
 for(const name of ['.env','.dev.vars']){
   if(!existsSync(name))continue;
   for(const line of readFileSync(name,'utf8').split(/\r?\n/)){
@@ -29,7 +30,7 @@ for(const name of ['.env','.dev.vars']){
 }
 
 const forbiddenPath=path=>/(^|\/)(data|artifacts|node_modules|dist|\.wrangler|backups?|exports)(\/|$)/i.test(path)
-  || /(^|\/)(local-access|operator-access|credentials)\.json$/i.test(path)
+  || /(^|\/)(local-access|operator-access|member-pepper|community-contacts|credentials)\.json$/i.test(path)
   || /(^|\/)\.(dev\.vars|npmrc|netrc)(\.|$)/i.test(path)
   || /(^|\/)\.env(?:\..*)?$/i.test(path)&&path.split('/').at(-1)!=='.env.example'
   || /\.(?:sqlite(?:3)?(?:-.*)?|db(?:-.*)?|pem|key|p12|pfx|log|dump|bak)$/i.test(path)

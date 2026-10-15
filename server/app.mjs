@@ -5,13 +5,14 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve, extname, sep } from 'node:path';
 import { z } from 'zod';
 import { createStore, localDate, weekStart } from './store.mjs';
-import { submissionSchema, joinSchema } from './validation.mjs';
+import { submissionSchema, joinSchema,registerSchema,memberLoginSchema,contactsSchema } from './validation.mjs';
+import {createMemberAccounts,memberCookie,memberSessionSeconds,memberSessionQuery,publicMember} from './member-accounts.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = (status, message) => Object.assign(new Error(message), { status });
 function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').filter(x => x.includes('=')).map(x => { const i=x.indexOf('='); return [x.slice(0,i).trim(), x.slice(i+1)]; })); }
 
-export function createApp({ dataDir, publicDir, adminPassword, operatorPassword, seed = true, timezone = 'America/Los_Angeles' }) {
+export function createApp({ dataDir, publicDir, adminPassword, operatorPassword, memberPepper,seed = true, timezone = 'America/Los_Angeles' }) {
   const store = createStore(dataDir, { seed, timezone });
   const sessions = new Map(), attempts = new Map();
   const secretPath = join(dataDir, 'local-access.json');
@@ -27,7 +28,10 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
   if(operatorSecret&&operatorSecret===password)throw new Error('两种角色必须使用不同口令');
   const operatorHash=operatorSecret?scryptSync(operatorSecret,salt,64):null;
   password = undefined;
-  const authMember = req => { const sid = cookies(req).liaoye_member; return sid ? store.db.prepare('SELECT id,nickname FROM members WHERE session_hash=?').get(hash(sid)) : null; };
+  const pepperPath=join(dataDir,'member-pepper.json');
+  if(!memberPepper){if(existsSync(pepperPath))memberPepper=JSON.parse(readFileSync(pepperPath,'utf8')).pepper;else{memberPepper=randomBytes(32).toString('hex');writeFileSync(pepperPath,JSON.stringify({pepper:memberPepper}),{mode:0o600,flag:'wx'});}}
+  const accounts=createMemberAccounts({pepper:memberPepper,get:(sql,...args)=>store.db.prepare(sql).get(...args),run:(sql,...args)=>store.db.prepare(sql).run(...args),batch:statements=>{store.db.exec('BEGIN IMMEDIATE');try{const result=statements.map(([sql,args])=>store.db.prepare(sql).run(...args));store.db.exec('COMMIT');return result;}catch(e){store.db.exec('ROLLBACK');throw e;}}});
+  const authMember = req => { const sid = cookies(req)[memberCookie]; return sid ? store.db.prepare(memberSessionQuery).get(hash(sid),Date.now()) : null; };
   const adminRole = req => {
     const session = sessions.get(hash(cookies(req).liaoye_admin || ''));
     return session && session.expires > Date.now() ? session.role : null;
@@ -35,7 +39,8 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
   const authAdmin=req=>Boolean(adminRole(req));
   const requireAdmin = req => { if (!authAdmin(req)) throw fail(401, '请先登录管理台'); };
   const requireSuper=req=>{requireAdmin(req);if(adminRole(req)!=='super_admin')throw fail(403,'此操作仅限超级管理员');};
-  const requireMember = req => { const member = authMember(req); if (!member) throw fail(401, '先认识一下吧，完成入群问答即可参与'); return member; };
+  const requireAccount=req=>{const member=authMember(req);if(!member)throw fail(401,'请先登录或注册账号');return member;};
+  const requireMember = req => { const member = requireAccount(req); if (!member.joined_at) throw fail(403, '请先在加入社群页面完成入群问答'); return member; };
   const rateLimit = (bucket, max, windowMs) => {
     const now = Date.now();
     for (const [k,v] of attempts) if (v.expires < now) attempts.delete(k);
@@ -69,8 +74,8 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
         return { ...item, votes, canPlan: !item.demo && votes >= 3 && (firstMeetingHeld || groupSize >= 100),
           voted: Boolean(member && store.db.prepare('SELECT 1 FROM votes WHERE content_id=? AND member_id=?').get(item.id,member.id)) };
       }),
-      member: member || null, admin: authAdmin(req), adminRole:adminRole(req), date, month: date.slice(0,7), week: weekStart(date),
-      community: { groupSize, firstMeetingHeld, members: Number(store.db.prepare('SELECT COUNT(*) AS n FROM members').get().n), firstMeetingThreshold: 100, proposalThreshold: 3 },
+      member: publicMember(member), admin: authAdmin(req), adminRole:adminRole(req), date, month: date.slice(0,7), week: weekStart(date),
+      community: { groupSize, firstMeetingHeld, members: Number(store.db.prepare('SELECT COUNT(*) AS n FROM member_accounts').get().n), firstMeetingThreshold: 100, proposalThreshold: 3 },
       periods: { monthly: [...new Set(store.list().filter(c=>c.kind==='book'&&c.data.cadence==='monthly').map(c=>c.data.period))].sort().reverse(), weekly: [...new Set(store.list().filter(c=>c.kind==='book'&&c.data.cadence==='weekly').map(c=>c.data.period))].sort().reverse() }
     };
   };
@@ -90,14 +95,19 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
       }
       if (path === '/api/health' && method === 'GET') return json(res,{ ok:true, service:'liaoye', version:'0.1.0' });
       if (path === '/api/state' && method === 'GET') return json(res,snapshot(req));
+      if(path==='/api/account/register'&&method==='POST'){
+        rateLimit(`register:${req.socket.remoteAddress}`,10,60*60_000);const result=await accounts.register(registerSchema.parse(await body(req)),cookies(req));
+        setCookie(res,memberCookie,result.sid,memberSessionSeconds);return json(res,result.member,201);
+      }
+      if(path==='/api/account/login'&&method==='POST'){
+        const input=memberLoginSchema.parse(await body(req));rateLimit(`member-login-ip:${req.socket.remoteAddress}`,30,15*60_000);rateLimit(`member-login:${input.wechat}`,10,15*60_000);
+        const result=await accounts.login(input,cookies(req));setCookie(res,memberCookie,result.sid,memberSessionSeconds);return json(res,result.member);
+      }
+      if(path==='/api/account/logout'&&method==='POST'){await accounts.logout(cookies(req));setCookie(res,memberCookie,'',0);return json(res,{ok:true});}
+      if(path==='/api/community'&&method==='GET'){const m=requireAccount(req);return json(res,{member:{...publicMember(m),wechat:m.wechat_id},contacts:store.setting('communityContacts')||[]});}
       if (path === '/api/join' && method === 'POST') {
-        rateLimit(`join:${req.socket.remoteAddress}`, 20, 60 * 60_000);
-        if (authMember(req)) throw fail(409,'当前浏览器已经加入');
-        const input = joinSchema.parse(await body(req)), id = randomUUID(), sid = randomBytes(32).toString('hex');
-        if (store.db.prepare('SELECT id FROM members WHERE nickname=?').get(input.nickname)) throw fail(409,'这个昵称已经有人使用，换一个吧');
-        store.db.prepare('INSERT INTO members VALUES(?,?,?,?,?)').run(id,hash(sid),input.nickname,JSON.stringify(input),new Date().toISOString());
-        setCookie(res,'liaoye_member',sid,365*86400);
-        return json(res,{ id,nickname:input.nickname },201);
+        const member=requireAccount(req);rateLimit(`join:${member.id}`,20,60*60_000);
+        return json(res,await accounts.join(member,joinSchema.parse(await body(req))),201);
       }
       if (path === '/api/submissions' && method === 'POST') {
         const member = requireMember(req);
@@ -134,6 +144,8 @@ export function createApp({ dataDir, publicDir, adminPassword, operatorPassword,
       }
       if (path.startsWith('/api/admin/')) {
         requireAdmin(req);
+        if(path==='/api/admin/community-contacts'&&method==='GET')return json(res,{contacts:store.setting('communityContacts')||[]});
+        if(path==='/api/admin/community-contacts'&&method==='PUT'){const input=contactsSchema.parse(await body(req));store.setting('communityContacts',input.contacts);store.audit('update_community_contacts','community');return json(res,{ok:true});}
         if(path.startsWith('/api/admin/keys'))requireSuper(req);
         if (path === '/api/admin/dashboard' && method === 'GET') return json(res,{
           role:adminRole(req),pending:store.list('pending'), rejected:store.list('rejected'),

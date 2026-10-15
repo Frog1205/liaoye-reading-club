@@ -13,6 +13,8 @@ artifacts/
 # Credentials and private keys, including copies outside data/.
 local-access.json
 operator-access.json
+member-pepper.json
+community-contacts.json
 credentials.json
 .npmrc
 .netrc

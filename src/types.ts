@@ -1,5 +1,6 @@
 export type Kind = 'book' | 'note' | 'activity';
-export type Page = 'shelf' | 'notes' | 'activities' | 'agents' | 'about' | 'admin';
+export type Page = 'shelf' | 'notes' | 'activities' | 'agents' | 'about' | 'community' | 'admin';
+export type CommunityContact={name:string;role:'owner'|'operator';wechat:string};
 export type ContentData = {
   title: string; author?: string; description?: string; category?: string;
   cover?: string; cadence?: 'monthly' | 'weekly'; period?: string;
@@ -11,7 +12,7 @@ export type Entry = {
   votes?: number; voted?: boolean; canPlan?: boolean;
 };
 export type State = {
-  content: Entry[]; member: { id: string; nickname: string } | null; admin: boolean; adminRole: 'super_admin' | 'operator' | null;
+  content: Entry[]; member: { id: string; nickname: string;joined:boolean } | null; admin: boolean; adminRole: 'super_admin' | 'operator' | null;
   date: string; month: string; week: string;
   community: { groupSize: number | null; firstMeetingHeld: boolean; members: number; firstMeetingThreshold: number; proposalThreshold: number };
   periods: { monthly: string[]; weekly: string[] };

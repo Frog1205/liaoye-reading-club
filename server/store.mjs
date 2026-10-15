@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync,readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -37,6 +37,7 @@ export function createStore(directory, { seed = true, timezone = 'America/Los_An
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, action TEXT NOT NULL, subject TEXT NOT NULL, created_at TEXT NOT NULL);
   `);
+  db.exec(readFileSync(new URL('../cloud/migrations/0003-member-accounts.sql',import.meta.url),'utf8'));
   const parse = row => row && ({ id: row.id, kind: row.kind, status: row.status, data: JSON.parse(row.data), source: row.source, sourceLabel: row.source_label, demo: Boolean(row.demo), createdAt: row.created_at, updatedAt: row.updated_at });
   const store = {
     db,

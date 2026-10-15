@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { submissionSchema, joinSchema } from '../server/validation.mjs';
+import { submissionSchema, joinSchema,registerSchema,memberLoginSchema,contactsSchema } from '../server/validation.mjs';
+import {createMemberAccounts,memberCookie,memberSessionSeconds,publicMember} from '../server/member-accounts.mjs';
 import { localDate, weekStart } from '../server/dates.mjs';
 const now=()=>new Date().toISOString();
 const fail=(status,message)=>Object.assign(new Error(message),{status});
@@ -17,6 +18,7 @@ export async function handle(request,env){
   const get=(sql,...args)=>q(sql,...args).first();
   const all=async(sql,...args)=>(await q(sql,...args).all()).results;
   const run=(sql,...args)=>q(sql,...args).run();
+  const accounts=createMemberAccounts({get,run,pepper:env.MEMBER_PASSWORD_PEPPER,batch:statements=>db.batch(statements.map(([sql,args])=>q(sql,...args)))});
   const setting=async(key,value)=>{if(value!==undefined)await run('INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',key,JSON.stringify(value));const r=await get('SELECT value FROM settings WHERE key=?',key);return r?JSON.parse(r.value):null;};
   const list=async(status='published')=>(await all('SELECT * FROM content WHERE status=? ORDER BY updated_at DESC,rowid DESC',status)).map(parse);
   const content=async id=>parse(await get('SELECT * FROM content WHERE id=?',id));
@@ -28,10 +30,11 @@ export async function handle(request,env){
   const setCookie=(name,value,seconds)=>headers.append('Set-Cookie',`${name}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${seconds}${secure}`);
   const adminRole=async()=>{const session=await get('SELECT role FROM management_sessions WHERE session_hash=? AND expires_at>?',await hash(cookie.liaoye_admin||''),Date.now());return ['super_admin','operator'].includes(session?.role)?session.role:null;};
   const admin=async()=>Boolean(await adminRole());
-  const member=async()=>get('SELECT id,nickname FROM members WHERE session_hash=?',await hash(cookie.liaoye_member||''));
+  const member=async()=>accounts.lookup(cookie);
   const requireAdmin=async()=>{if(!await admin())throw fail(401,'请先登录管理台');};
   const requireSuper=async()=>{await requireAdmin();if(await adminRole()!=='super_admin')throw fail(403,'此操作仅限超级管理员');};
-  const requireMember=async()=>{const m=await member();if(!m)throw fail(401,'请先完成入群问答');return m;};
+  const requireAccount=async()=>{const m=await member();if(!m)throw fail(401,'请先登录或注册账号');return m;};
+  const requireMember=async()=>{const m=await requireAccount();if(!m.joined_at)throw fail(403,'请先在加入社群页面完成入群问答');return m;};
   const limit=async(bucket,max,window)=>{const current=Math.floor(Date.now()/window);const key=await hash(`${bucket}:${current}`);const r=await get('INSERT INTO rate_limits(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1 RETURNING count',key,Date.now()+window*2);if(r.count>max)throw fail(429,'操作太频繁，请稍后再试');};
   const agent=async()=>{const token=/^Bearer (.+)$/i.exec(request.headers.get('Authorization')||'')?.[1];if(!token)throw fail(401,'需要个人智能体令牌');const a=await get('SELECT * FROM agent_keys WHERE key_hash=? AND revoked_at IS NULL',await hash(token));if(!a)throw fail(401,'令牌无效或已撤销');await limit('agent:'+a.id,60,60000);await run('UPDATE agent_keys SET last_used_at=? WHERE id=?',now(),a.id);return a;};
   const body=async()=>{if(!(request.headers.get('Content-Type')||'').startsWith('application/json'))throw fail(415,'请使用 application/json');if(Number(request.headers.get('Content-Length'))>65536)throw fail(413,'内容过长');const reader=request.body?.getReader();let bytes=0,chunks=[];if(reader){while(true){const {value,done}=await reader.read();if(done)break;bytes+=value.length;if(bytes>65536){await reader.cancel();throw fail(413,'内容过长');}chunks.push(value);}}const joined=new Uint8Array(bytes);let offset=0;for(const c of chunks){joined.set(c,offset);offset+=c.length;}try{return JSON.parse(new TextDecoder().decode(joined)||'{}');}catch{throw fail(400,'JSON 格式不正确');}};
@@ -48,12 +51,20 @@ export async function handle(request,env){
       const rows=await list(),m=await member(),groupSize=await setting('groupSize'),firstMeetingHeld=Boolean(await setting('firstMeetingHeld'));
       const counts=await all('SELECT content_id,COUNT(*) AS n FROM votes GROUP BY content_id');const mine=m?await all('SELECT content_id FROM votes WHERE member_id=?',m.id):[];
       const date=localDate(env.LIAOYE_TIMEZONE||'America/Los_Angeles');
-      return json({content:rows.map(c=>{if(c.kind!=='activity')return c;const votes=counts.find(v=>v.content_id===c.id)?.n||0;return{...c,votes,voted:mine.some(v=>v.content_id===c.id),canPlan:!c.demo&&votes>=3&&(firstMeetingHeld||groupSize>=100)};}),member:m||null,admin:await admin(),adminRole:await adminRole(),date,month:date.slice(0,7),week:weekStart(date),community:{groupSize,firstMeetingHeld,members:(await get('SELECT COUNT(*) AS n FROM members')).n,firstMeetingThreshold:100,proposalThreshold:3},periods:Object.fromEntries(['monthly','weekly'].map(c=>[c,[...new Set(rows.filter(r=>r.kind==='book'&&r.data.cadence===c).map(r=>r.data.period))].sort().reverse()]))});
+      return json({content:rows.map(c=>{if(c.kind!=='activity')return c;const votes=counts.find(v=>v.content_id===c.id)?.n||0;return{...c,votes,voted:mine.some(v=>v.content_id===c.id),canPlan:!c.demo&&votes>=3&&(firstMeetingHeld||groupSize>=100)};}),member:publicMember(m),admin:await admin(),adminRole:await adminRole(),date,month:date.slice(0,7),week:weekStart(date),community:{groupSize,firstMeetingHeld,members:(await get('SELECT COUNT(*) AS n FROM member_accounts')).n,firstMeetingThreshold:100,proposalThreshold:3},periods:Object.fromEntries(['monthly','weekly'].map(c=>[c,[...new Set(rows.filter(r=>r.kind==='book'&&r.data.cadence===c).map(r=>r.data.period))].sort().reverse()]))});
     }
+    if(path==='/api/account/register'&&method==='POST'){
+      await limit('register:'+(request.headers.get('CF-Connecting-IP')||'local'),10,3600000);
+      const result=await accounts.register(registerSchema.parse(await body()),cookie);setCookie(memberCookie,result.sid,memberSessionSeconds);return json(result.member,201);
+    }
+    if(path==='/api/account/login'&&method==='POST'){
+      const input=memberLoginSchema.parse(await body());await limit('member-login-ip:'+(request.headers.get('CF-Connecting-IP')||'local'),30,900000);await limit('member-login:'+input.wechat,10,900000);
+      const result=await accounts.login(input,cookie);setCookie(memberCookie,result.sid,memberSessionSeconds);return json(result.member);
+    }
+    if(path==='/api/account/logout'&&method==='POST'){await accounts.logout(cookie);setCookie(memberCookie,'',0);return json({ok:true});}
+    if(path==='/api/community'&&method==='GET'){const m=await requireAccount();return json({member:{...publicMember(m),wechat:m.wechat_id},contacts:await setting('communityContacts')||[]});}
     if(path==='/api/join'&&method==='POST'){
-      await limit('join:'+(request.headers.get('CF-Connecting-IP')||'local'),20,3600000);if(await member())throw fail(409,'当前浏览器已经加入');const input=joinSchema.parse(await body());
-      const sid=random(),id=crypto.randomUUID();try{await run('INSERT INTO members VALUES(?,?,?,?,?)',id,await hash(sid),input.nickname,JSON.stringify(input),now());}catch(e){if(String(e).includes('UNIQUE'))throw fail(409,'这个昵称已经有人使用');throw e;}
-      setCookie('liaoye_member',sid,365*86400);return json({id,nickname:input.nickname},201);
+      const m=await requireAccount();await limit('join:'+m.id,20,3600000);return json(await accounts.join(m,joinSchema.parse(await body())),201);
     }
     if(path==='/api/submissions'&&method==='POST'){
       const m=await requireMember();await limit('submit:'+m.id,20,3600000);const input=submissionSchema.parse(await body());if(input.kind==='note')input.data.author=m.nickname;if(input.kind==='activity')input.data.proposer=m.nickname;return json(await insert(input,'member',m.nickname),201);
@@ -78,6 +89,8 @@ export async function handle(request,env){
     if(path==='/api/admin/logout'&&method==='POST'){await run('DELETE FROM management_sessions WHERE session_hash=?',await hash(cookie.liaoye_admin||''));setCookie('liaoye_admin','',0);return json({ok:true});}
     if(path.startsWith('/api/admin/')){
       await requireAdmin();
+      if(path==='/api/admin/community-contacts'&&method==='GET')return json({contacts:await setting('communityContacts')||[]});
+      if(path==='/api/admin/community-contacts'&&method==='PUT'){const input=contactsSchema.parse(await body());await setting('communityContacts',input.contacts);await audit('update_community_contacts','community');return json({ok:true});}
       if(path.startsWith('/api/admin/keys'))await requireSuper();
       if(path==='/api/admin/dashboard'&&method==='GET')return json({role:await adminRole(),pending:await list('pending'),rejected:await list('rejected'),keys:await adminRole()==='super_admin'?await all('SELECT id,name,prefix,created_at,last_used_at,revoked_at FROM agent_keys ORDER BY created_at DESC'):[],groupSize:await setting('groupSize'),firstMeetingHeld:Boolean(await setting('firstMeetingHeld'))});
       if(path==='/api/admin/content'&&method==='POST'){const c=await insert(submissionSchema.parse(await body()),'editor','社群主理人','published');await audit('publish',c.id);return json(c,201);}
