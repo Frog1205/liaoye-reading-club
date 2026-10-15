@@ -6,11 +6,12 @@ import {dirname,join,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createApp} from '../server/app.mjs';
 import {createCloudApp} from './cloud-fixture.mjs';
-import {digest} from '../server/member-accounts.mjs';
+import {digest,accountPassword} from '../server/member-accounts.mjs';
+import {validMemberPassword,memberPasswordPattern} from '../shared/member-password.mjs';
 const build=process.env.LIAOYE_TEST_CLOUD==='1'?createCloudApp:createApp;
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const options={publicDir:join(root,'dist'),adminPassword:'fixture-account-admin-password',operatorPassword:'fixture-account-operator-password',memberPepper:'fixture-member-pepper-at-least-32-characters'};
-const credentials={nickname:'同一个昵称',wechat:'fixture_reader_26',password:'fixture-member-long-password'};
+const credentials={nickname:'同一个昵称',wechat:'fixture_reader_26',password:'Fixture-member-long-password!'};
 const questions={recommendedBook:'测试书籍',value:'希望线下分享真实阅读体验',aiExperience:'偶尔试过',agreed:true};
 const contacts=[{name:'测试群主',role:'owner',wechat:'fixture_owner_26'},{name:'测试运营',role:'operator',wechat:'fixture_operator_26'}];
 let app,directory,base;
@@ -43,8 +44,23 @@ test('five-character passwords and privilege injection are rejected, six-charact
   assert.equal((await register({...credentials,role:'super_admin'})).status,400);
   assert.equal((await register({...credentials,joined:true})).status,400);
   assert.equal((await request('/api/account/register',{method:'POST',origin:'https://evil.invalid',data:credentials})).status,403);
-  const sixCharacterPassword='six-ok';const r=await register({...credentials,password:sixCharacterPassword});assert.equal(r.status,201);assert.equal((await login({...credentials,password:sixCharacterPassword})).status,200);const row=app.store.db.prepare('SELECT * FROM member_accounts').get();assert.notEqual(row.password_hash,sixCharacterPassword);assert.match(row.password_hash,/^[a-f0-9]{64}$/);assert.ok(row.password_salt.length>=32);
+  const sixCharacterPassword='Aa!234';const r=await register({...credentials,password:sixCharacterPassword});assert.equal(r.status,201);assert.equal((await login({...credentials,password:sixCharacterPassword})).status,200);const row=app.store.db.prepare('SELECT * FROM member_accounts').get();assert.notEqual(row.password_hash,sixCharacterPassword);assert.match(row.password_hash,/^[a-f0-9]{64}$/);assert.ok(row.password_salt.length>=32);
   assert.doesNotMatch(JSON.stringify((await request('/api/state',{cookie:r.cookie})).body),/password_hash|password_salt|fixture_reader_26|pepper/);
+});
+
+test('registration requires all three password character classes and the HTML pattern agrees',async()=>{
+  for(const password of ['abc!12','ABC!12','Ab1234'])assert.equal((await register({...credentials,password})).status,400);
+  assert.equal((await register({...credentials,password:'Aa!234'})).status,201);
+  const htmlRule=new RegExp(`^(?:${memberPasswordPattern})$`,'v');
+  for(const password of ['Aa!bcd','Aa_bcd','Aa-bcd','Aa[bcd','Aa]bcd','Aa\\bcd','Aa`bcd','Aa bcd','Aa中文测试','123456','ABCDEF','abcdef','Aa!12','Aa!'+ 'x'.repeat(125),'Aa!'+ 'x'.repeat(126)])assert.equal(htmlRule.test(password)&&password.length<=128,validMemberPassword(password));
+  assert.equal(validMemberPassword('Aa!bcd'),true);assert.equal(validMemberPassword('Aa bcd'),false);assert.equal(validMemberPassword('Aa中文测试'),false);
+  for(let code=33;code<=126;code++){const char=String.fromCharCode(code);if(!/[A-Za-z0-9]/.test(char))assert.equal(validMemberPassword('Aa'+char+'xyz'),true);}
+});
+
+test('existing accounts whose passwords predate the complexity policy can still log in',async()=>{
+  const r=await register();assert.equal(r.status,201);const oldPassword='legacy-lowercase-password';const row=app.store.db.prepare('SELECT password_salt FROM member_accounts WHERE member_id=?').get(r.body.id);
+  const hash=await accountPassword(oldPassword,row.password_salt,options.memberPepper);app.store.db.prepare('UPDATE member_accounts SET password_hash=? WHERE member_id=?').run(hash,r.body.id);
+  assert.equal((await login({...credentials,password:oldPassword})).status,200);assert.equal((await login({...credentials,password:'wrong-password'})).status,401);
 });
 test('registered users can read private contacts, then join once; unjoined users cannot submit or vote',async()=>{
   const admin=await management();await request('/api/admin/community-contacts',{method:'PUT',cookie:admin,data:{contacts}});

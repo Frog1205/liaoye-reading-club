@@ -4,6 +4,7 @@ import {api} from './api';
 import {JoinForm} from './components';
 import {type CommunityContact,type State} from './types';
 import {RegistrationGuard,type RegistrationConfig} from './RegistrationGuard';
+import {validMemberPassword,memberPasswordPattern,memberPasswordHint} from '../shared/member-password.mjs';
 
 export function AccountForm({done}:{done:()=>Promise<void>}){
   const [mode,setMode]=useState<'login'|'register'>('login'),[busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -11,6 +12,7 @@ export function AccountForm({done}:{done:()=>Promise<void>}){
   useEffect(()=>{let active=true;setToken('');setSecurity(null);if(mode==='register')void api<RegistrationConfig>('/api/account/security').then(v=>{if(active)setSecurity(v);}).catch(()=>{if(active)setError('无法读取注册安全配置，请重试');});return()=>{active=false;};},[mode,configRetry]);
   async function submit(e:FormEvent<HTMLFormElement>){
     e.preventDefault();const f=new FormData(e.currentTarget),password=String(f.get('password')||'');setError('');
+    if(mode==='register'&&!validMemberPassword(password)){setError(memberPasswordHint);return;}
     if(mode==='register'&&password!==f.get('confirm')){setError('两次输入的密码不一致');return;}
     if(mode==='register'&&(!security?.enabled||!security.available||(security.required&&!token))){setError('注册暂不可用或尚未完成安全验证');return;}
     setBusy(true);try{await api(`/api/account/${mode}`,'POST',{wechat:f.get('wechat'),password,...(mode==='register'?{nickname:f.get('nickname'),...(security?.required?{turnstileToken:token}:{})}:{})});await done();}catch(e){setError((e as Error).message);if(mode==='register'){setToken('');setChallenge(n=>n+1);}}finally{setBusy(false);}
@@ -18,8 +20,8 @@ export function AccountForm({done}:{done:()=>Promise<void>}){
   return <><div className="segmented account-tabs" aria-label="账号操作"><button type="button" disabled={busy} className={mode==='login'?'selected':''} onClick={()=>{setMode('login');setError('');}}>已有账号，登录</button><button type="button" disabled={busy} className={mode==='register'?'selected':''} onClick={()=>{setMode('register');setError('');}}>第一次来，注册</button></div><form key={mode} className="form" onSubmit={submit}>
     {mode==='register'&&<label>昵称<input name="nickname" autoComplete="nickname" maxLength={24} required placeholder="大家怎么称呼你"/></label>}
     <label>微信号<input name="wechat" autoComplete="username" minLength={6} maxLength={64} required placeholder="填写微信号，不是微信昵称" autoCapitalize="none" spellCheck={false}/></label>
-    <label>密码<input name="password" type="password" autoComplete={mode==='register'?'new-password':'current-password'} minLength={mode==='register'?6:1} maxLength={128} required placeholder={mode==='register'?'设置至少 6 位密码':'输入本站账号密码'}/></label>
-    {mode==='register'&&<label>确认密码<input name="confirm" type="password" autoComplete="new-password" minLength={6} maxLength={128} required placeholder="再次输入密码"/></label>}
+    <label>密码<input name="password" type="password" autoComplete={mode==='register'?'new-password':'current-password'} minLength={mode==='register'?6:1} maxLength={128} pattern={mode==='register'?memberPasswordPattern:undefined} title={mode==='register'?memberPasswordHint:undefined} required placeholder={mode==='register'?'至少6位，含大写、小写和特殊字符':'输入本站账号密码'}/></label>
+    {mode==='register'&&<><p className="form-hint">{memberPasswordHint}。</p><label>确认密码<input name="confirm" type="password" autoComplete="new-password" minLength={6} maxLength={128} pattern={memberPasswordPattern} title={memberPasswordHint} required placeholder="再次输入密码"/></label></>}
     <p className="form-hint">{mode==='register'?'微信号用于本站登录与社群联络，不向其他成员公开。同一微信号只能注册一次，昵称可以重名。注册后即可在其他浏览器登录。':'使用微信号和本站密码登录；不是微信官方授权登录。忘记密码请在已有社群渠道联系管理员核实处理。'}</p>
     {mode==='register'&&(!security?<p className="form-hint">正在读取注册安全配置… <button type="button" className="text-button" onClick={()=>setConfigRetry(n=>n+1)}>重新加载</button></p>:!security.enabled?<p className="form-error" role="alert">新账号注册暂时关闭，已有账号可切换到登录。</p>:!security.available?<p className="form-error" role="alert">注册安全验证暂不可用，请稍后重试。</p>:security.required&&<RegistrationGuard key={challenge} siteKey={security.siteKey} onToken={setToken}/>)}
     {error&&<p className="form-error" role="alert">{error}</p>}<button className="button" disabled={busy||(mode==='register'&&(!security?.enabled||!security?.available||(security.required&&!token)))}>{busy?<LoaderCircle className="spin" size={16}/>:<KeyRound size={16}/>} {mode==='register'?'注册并登录':'登录账号'}</button>

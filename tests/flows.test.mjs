@@ -20,7 +20,7 @@ const request=async(path,{method='GET',data,cookie,bearer,origin,extra={}}={})=>
   return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')?.split(';')[0]};
 };
 let memberNumber=0;
-async function newMember(nickname){const r=await request('/api/account/register',{method:'POST',data:{nickname,wechat:`fixture_reader_${++memberNumber}`,password:'fixture-member-password'}});assert.equal(r.status,201);const joined=await request('/api/join',{method:'POST',cookie:r.cookie,data:{recommendedBook:'测试用书',value:'希望在线下听见不同人的阅读体验。',aiExperience:'偶尔试过',agreed:true}});assert.equal(joined.status,201);return r.cookie;}
+async function newMember(nickname){const r=await request('/api/account/register',{method:'POST',data:{nickname,wechat:`fixture_reader_${++memberNumber}`,password:'Fixture-member-password!'}});assert.equal(r.status,201);const joined=await request('/api/join',{method:'POST',cookie:r.cookie,data:{recommendedBook:'测试用书',value:'希望在线下听见不同人的阅读体验。',aiExperience:'偶尔试过',agreed:true}});assert.equal(joined.status,201);return r.cookie;}
 before(async()=>{directory=await mkdtemp(join(tmpdir(),'liaoye-test-'));app=await createApp({dataDir:directory,publicDir:join(root,'dist'),adminPassword:password,operatorPassword:"fixture-operator-password",seed:true});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${app.server.address().port}`;});
 after(async()=>{app.server.closeAllConnections();await new Promise(r=>app.server.close(r));app.store.close();const target=resolve(directory);assert.ok(target.startsWith(resolve(tmpdir())+sep+'liaoye-test-'));await rm(target,{recursive:true,force:true});});
 

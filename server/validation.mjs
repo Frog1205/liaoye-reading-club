@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { weekStart } from './dates.mjs';
+import {validMemberPassword,memberPasswordHint} from '../shared/member-password.mjs';
 const short = (max = 120) => z.string().trim().min(1, '请填写此项').max(max);
 const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T12:00:00Z`)) && new Date(`${s}T12:00:00Z`).toISOString().slice(0, 10) === s;
 export const bookSchema = z.object({
@@ -18,7 +19,7 @@ export const submissionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('activity'), data: activitySchema }).strict()
 ]);
 export const wechatSchema=z.string().trim().regex(/^[A-Za-z][A-Za-z0-9_-]{5,63}$/,'微信号需为6–64位字母、数字、下划线或连字符，且以字母开头').transform(v=>v.toLowerCase());
-export const registerSchema=z.object({nickname:short(24).refine(v=>!/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(v),'昵称请勿使用控制字符'),wechat:wechatSchema,password:z.string().min(6,'密码至少6位').max(128,'密码最多128位').refine(v=>v.trim().length>0,'密码不能全部为空白'),turnstileToken:z.string().max(2048).optional()}).strict();
+export const registerSchema=z.object({nickname:short(24).refine(v=>!/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(v),'昵称请勿使用控制字符'),wechat:wechatSchema,password:z.string().min(6,'密码至少6位').max(128,'密码最多128位').refine(validMemberPassword,memberPasswordHint),turnstileToken:z.string().max(2048).optional()}).strict();
 export const memberLoginSchema=z.object({wechat:wechatSchema,password:z.string().min(1).max(128)}).strict();
 export const contactsSchema=z.object({contacts:z.array(z.object({name:short(30),role:z.enum(['owner','operator']),wechat:wechatSchema}).strict()).min(1).max(10)}).strict().superRefine((v,ctx)=>{if(new Set(v.contacts.map(c=>c.wechat)).size!==v.contacts.length)ctx.addIssue({code:'custom',path:['contacts'],message:'联系方式中的微信号不能重复'});});
 export const joinSchema = z.object({

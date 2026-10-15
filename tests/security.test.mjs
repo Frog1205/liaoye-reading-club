@@ -8,7 +8,7 @@ import {createCloudApp} from './cloud-fixture.mjs';
 import {verifyRegistration} from '../server/registration-security.mjs';
 const cloud=process.env.LIAOYE_TEST_CLOUD==='1',build=cloud?createCloudApp:createApp;
 const baseOptions={publicDir:resolve('dist'),seed:false,adminPassword:'fixture-security-administrator',operatorPassword:'fixture-security-operator',memberPepper:'fixture-security-pepper-at-least-32-characters'};
-const credentials={nickname:'安全自检',wechat:'fixture_security_user',password:'fixture-member-long-password'};
+const credentials={nickname:'安全自检',wechat:'fixture_security_user',password:'Fixture-member-long-password!'};
 const questions={recommendedBook:'安全测试书籍',value:'希望与真实读者分享阅读',aiExperience:'偶尔试过',agreed:true};
 let app,directory,base;
 async function start(turnstile){app=await build({...baseOptions,dataDir:directory,turnstile});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${app.server.address().port}`;}
