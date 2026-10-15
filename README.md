@@ -42,6 +42,8 @@ npm start
 
 网站首次启动自动创建 `data/liaoye.sqlite` 和本地管理口令文件 `data/local-access.json`。在侧栏选择“社群管理”，输入该文件里的 `adminPassword` 即可维护内容。口令不会显示在网页、前端构建产物或服务日志中；请保管该文件。也可以通过 `.env` 的 `LIAOYE_ADMIN_PASSWORD` 指定至少 12 位口令。
 
+本地会员密码还依赖自动生成的`data/member-pepper.json`，与数据库一起保管、备份，不可删除后重建。生产使用独立Cloudflare Secret；本地与生产账号数据互不混用。
+
 ## 已实现
 
 - 月度书单、每周书单，按周期归档与切换，按阅读方向筛选。
