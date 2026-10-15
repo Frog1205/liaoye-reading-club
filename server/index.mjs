@@ -1,0 +1,12 @@
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { createApp } from './app.mjs';
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+if (existsSync(join(root,'.env'))) process.loadEnvFile(join(root,'.env'));
+const port = Number(process.env.PORT || 4317), host = process.env.HOST || '127.0.0.1';
+if (!['127.0.0.1','localhost','::1'].includes(host)) throw new Error('首版只允许本机监听；公网部署请先配置 HTTPS 和成员身份认证。');
+const { server,store } = createApp({ dataDir:process.env.LIAOYE_DATA_DIR || join(root,'data'),publicDir:join(root,'dist'),adminPassword:process.env.LIAOYE_ADMIN_PASSWORD || undefined,timezone:process.env.LIAOYE_TIMEZONE || 'America/Los_Angeles' });
+server.on('error',error=>{ console.error(error.code === 'EADDRINUSE' ? `端口 ${port} 已被占用，请设置 PORT 后重试。` : error.message); store.close(); process.exit(1); });
+server.listen(port,host,()=>console.log(`聊也读书已启动：http://${host}:${port}\n本地管理口令保存在 data/local-access.json（若使用环境变量口令则以环境变量为准）。`));
+for (const signal of ['SIGINT','SIGTERM']) process.on(signal,()=>server.close(()=>{ store.close(); process.exit(0); }));

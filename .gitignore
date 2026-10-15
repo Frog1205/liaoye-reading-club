@@ -1,0 +1,39 @@
+node_modules/
+dist/
+data/
+.env
+.env.*
+!.env.example
+*.log
+artifacts/
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Credentials and private keys, including copies outside data/.
+local-access.json
+operator-access.json
+credentials.json
+.npmrc
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Runtime databases and exports; keep cloud/schema.sql and migrations.
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.dump
+*.bak
+backups/
+backup/
+exports/
+
+# Local editor and OS state.
+.DS_Store
+Thumbs.db
